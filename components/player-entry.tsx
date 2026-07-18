@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Plus, X, Users, Trash2, ClipboardList } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,6 +43,43 @@ export function PlayerEntry({
   onGenerate,
 }: PlayerEntryProps) {
   const [value, setValue] = useState("")
+
+  // Courts / rounds inputs keep their own text state so the field can be
+  // cleared or partially typed. We push valid numbers up on change and
+  // clamp/normalise on blur — a controlled numeric value that coerces every
+  // keystroke to a minimum makes the field impossible to edit.
+  const [courtsText, setCourtsText] = useState(String(courts))
+  const [roundsText, setRoundsText] = useState(String(rounds))
+  useEffect(() => setCourtsText(String(courts)), [courts])
+  useEffect(() => setRoundsText(String(rounds)), [rounds])
+
+  function handleCourtsChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value
+    setCourtsText(raw)
+    const n = Number(raw)
+    if (raw !== "" && Number.isInteger(n) && n >= 1) onCourtsChange(n)
+  }
+
+  function commitCourts() {
+    const n = Math.round(Number(courtsText))
+    const next = Number.isFinite(n) && n >= 1 ? Math.min(n, maxCourts) : courts
+    if (next !== courts) onCourtsChange(next)
+    setCourtsText(String(next))
+  }
+
+  function handleRoundsChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value
+    setRoundsText(raw)
+    const n = Number(raw)
+    if (raw !== "" && Number.isInteger(n) && n >= 1) onRoundsChange(n)
+  }
+
+  function commitRounds() {
+    const n = Math.round(Number(roundsText))
+    const next = Number.isFinite(n) && n >= 1 ? Math.min(n, 40) : rounds
+    if (next !== rounds) onRoundsChange(next)
+    setRoundsText(String(next))
+  }
 
   function commit() {
     // Split on newlines and commas so a pasted list works too.
@@ -174,8 +211,9 @@ export function PlayerEntry({
               inputMode="numeric"
               min={1}
               max={maxCourts}
-              value={courts}
-              onChange={(e) => onCourtsChange(Number(e.target.value))}
+              value={courtsText}
+              onChange={handleCourtsChange}
+              onBlur={commitCourts}
               className="h-11 text-base"
             />
             <p className="text-xs text-muted-foreground">
@@ -190,8 +228,9 @@ export function PlayerEntry({
               inputMode="numeric"
               min={1}
               max={40}
-              value={rounds}
-              onChange={(e) => onRoundsChange(Number(e.target.value))}
+              value={roundsText}
+              onChange={handleRoundsChange}
+              onBlur={commitRounds}
               className="h-11 text-base"
             />
             <p className="text-xs text-muted-foreground">How many rounds to play</p>
