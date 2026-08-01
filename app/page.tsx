@@ -20,6 +20,10 @@ interface State {
   courts: number
   rounds: number
   courtsTouched: boolean
+  /** Player flagged as host, if any. */
+  host: string | null
+  /** Whether the host should sit out round 1 (honoured only when there are sit-outs). */
+  hostSitsOutFirstRound: boolean
   seed: number
   result: RotationResult | null
   screen: Screen
@@ -32,6 +36,8 @@ const initialState: State = {
   courts: 1,
   rounds: 8,
   courtsTouched: false,
+  host: null,
+  hostSitsOutFirstRound: false,
   seed: 1,
   result: null,
   screen: "entry",
@@ -46,6 +52,8 @@ type Action =
   | { type: "CLEAR_ALL" }
   | { type: "SET_COURTS"; courts: number }
   | { type: "SET_ROUNDS"; rounds: number }
+  | { type: "SET_HOST"; name: string | null }
+  | { type: "SET_HOST_SITS_OUT"; value: boolean }
   | { type: "GENERATE" }
   | { type: "REGENERATE" }
   | { type: "APPLY_ROSTER_CHANGE"; firstRound: number; courts: number; add: string[]; remove: string[] }
@@ -58,7 +66,10 @@ function syncCourts(state: State, players: string[]): number {
 }
 
 function build(state: State): RotationResult {
-  return generateRotation(state.players, state.courts, state.rounds, state.seed)
+  return generateRotation(state.players, state.courts, state.rounds, state.seed, {
+    host: state.host,
+    hostSitsOutFirstRound: state.hostSitsOutFirstRound,
+  })
 }
 
 function reducer(state: State, action: Action): State {
@@ -77,11 +88,29 @@ function reducer(state: State, action: Action): State {
       return { ...state, players, courts: syncCourts(state, players) }
     }
     case "REMOVE_PLAYER": {
+      const removed = state.players[action.index]
       const players = state.players.filter((_, i) => i !== action.index)
-      return { ...state, players, courts: syncCourts(state, players) }
+      const host = removed === state.host ? null : state.host
+      return { ...state, players, host, courts: syncCourts(state, players) }
     }
     case "CLEAR_ALL":
-      return { ...state, players: [], courts: 1, courtsTouched: false }
+      return {
+        ...state,
+        players: [],
+        courts: 1,
+        courtsTouched: false,
+        host: null,
+        hostSitsOutFirstRound: false,
+      }
+    case "SET_HOST":
+      // Toggling off the host also drops the sit-out option that depends on it.
+      return {
+        ...state,
+        host: action.name,
+        hostSitsOutFirstRound: action.name ? state.hostSitsOutFirstRound : false,
+      }
+    case "SET_HOST_SITS_OUT":
+      return { ...state, hostSitsOutFirstRound: action.value }
     case "SET_COURTS":
       return {
         ...state,
@@ -128,8 +157,20 @@ function reducer(state: State, action: Action): State {
       const seed = Math.floor(Math.random() * 1_000_000) + 1
       const result = extendRotation(lockedRounds, players, courts, totalRounds, seed)
 
+      // If the host is one of the departing players, drop the flag with them.
+      const host = state.host && removeSet.has(state.host) ? null : state.host
+
       // Mark courts as manually set so later edits don't silently re-sync either.
-      return { ...state, players, courts, courtsTouched: true, seed, result }
+      return {
+        ...state,
+        players,
+        courts,
+        courtsTouched: true,
+        host,
+        hostSitsOutFirstRound: host ? state.hostSitsOutFirstRound : false,
+        seed,
+        result,
+      }
     }
     case "SET_SCREEN":
       return { ...state, screen: action.screen }
@@ -197,11 +238,15 @@ export default function Page() {
           courts={state.courts}
           rounds={state.rounds}
           autoCourts={autoCourts(state.players.length)}
+          host={state.host}
+          hostSitsOutFirstRound={state.hostSitsOutFirstRound}
           onAddPlayers={(names) => dispatch({ type: "ADD_PLAYERS", names })}
           onRemovePlayer={(index) => dispatch({ type: "REMOVE_PLAYER", index })}
           onClearAll={() => dispatch({ type: "CLEAR_ALL" })}
           onCourtsChange={(courts) => dispatch({ type: "SET_COURTS", courts })}
           onRoundsChange={(rounds) => dispatch({ type: "SET_ROUNDS", rounds })}
+          onSetHost={(name) => dispatch({ type: "SET_HOST", name })}
+          onHostSitsOutChange={(value) => dispatch({ type: "SET_HOST_SITS_OUT", value })}
           onGenerate={() => dispatch({ type: "GENERATE" })}
         />
       ) : (

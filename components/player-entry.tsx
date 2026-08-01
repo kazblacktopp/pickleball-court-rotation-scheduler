@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Plus, X, Users, Trash2, ClipboardList } from "lucide-react"
+import { Plus, X, Users, Trash2, ClipboardList, Crown, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { sitOutsPerRound } from "@/lib/rotation"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,11 +23,15 @@ interface PlayerEntryProps {
   courts: number
   rounds: number
   autoCourts: number
+  host: string | null
+  hostSitsOutFirstRound: boolean
   onAddPlayers: (names: string[]) => void
   onRemovePlayer: (index: number) => void
   onClearAll: () => void
   onCourtsChange: (courts: number) => void
   onRoundsChange: (rounds: number) => void
+  onSetHost: (name: string | null) => void
+  onHostSitsOutChange: (value: boolean) => void
   onGenerate: () => void
 }
 
@@ -35,11 +40,15 @@ export function PlayerEntry({
   courts,
   rounds,
   autoCourts,
+  host,
+  hostSitsOutFirstRound,
   onAddPlayers,
   onRemovePlayer,
   onClearAll,
   onCourtsChange,
   onRoundsChange,
+  onSetHost,
+  onHostSitsOutChange,
   onGenerate,
 }: PlayerEntryProps) {
   const [value, setValue] = useState("")
@@ -105,6 +114,9 @@ export function PlayerEntry({
   // `autoCourts` already accounts for an extra shared 3-player court when 3
   // players are left over, so it doubles as the highest selectable court count.
   const maxCourts = autoCourts
+  // The host can only opt to sit out round 1 when some player actually has to
+  // sit out — i.e. the roster exceeds what the selected courts can seat.
+  const canHostSitOut = enoughPlayers && sitOutsPerRound(players.length, courts) > 0
 
   return (
     <div className="flex flex-col gap-6">
@@ -148,22 +160,53 @@ export function PlayerEntry({
         {players.length > 0 && (
           <>
             <ul className="mt-4 flex flex-wrap gap-2">
-              {players.map((name, i) => (
-                <li key={`${name}-${i}`}>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border bg-secondary py-1.5 pl-3 pr-1.5 text-sm font-medium text-secondary-foreground">
-                    {name}
-                    <button
-                      type="button"
-                      onClick={() => onRemovePlayer(i)}
-                      className="flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive hover:text-white"
-                      aria-label={`Remove ${name}`}
+              {players.map((name, i) => {
+                const isHost = name === host
+                return (
+                  <li key={`${name}-${i}`}>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full border py-1.5 pl-1.5 pr-1.5 text-sm font-medium transition-colors ${
+                        isHost
+                          ? "border-primary/50 bg-primary/10 text-foreground ring-1 ring-primary/30"
+                          : "bg-secondary text-secondary-foreground"
+                      }`}
                     >
-                      <X className="size-3.5" aria-hidden="true" />
-                    </button>
-                  </span>
-                </li>
-              ))}
+                      <button
+                        type="button"
+                        onClick={() => onSetHost(isHost ? null : name)}
+                        aria-pressed={isHost}
+                        aria-label={isHost ? `${name} is the host — remove host` : `Make ${name} the host`}
+                        title={isHost ? "Host — tap to unset" : "Make host"}
+                        className={`flex size-5 items-center justify-center rounded-full transition-colors ${
+                          isHost
+                            ? "text-primary"
+                            : "text-muted-foreground hover:text-primary"
+                        }`}
+                      >
+                        <Crown
+                          className="size-3.5"
+                          aria-hidden="true"
+                          {...(isHost ? { fill: "currentColor" } : {})}
+                        />
+                      </button>
+                      <span className="pl-0.5">{name}</span>
+                      <button
+                        type="button"
+                        onClick={() => onRemovePlayer(i)}
+                        className="flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive hover:text-white"
+                        aria-label={`Remove ${name}`}
+                      >
+                        <X className="size-3.5" aria-hidden="true" />
+                      </button>
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Tap the <Crown className="inline size-3 align-[-1px]" aria-hidden="true" /> on a
+              player to set them as the host.
+            </p>
             <AlertDialog>
               <AlertDialogTrigger className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-destructive">
                 <Trash2 className="size-4" aria-hidden="true" />
@@ -192,6 +235,60 @@ export function PlayerEntry({
           </>
         )}
       </section>
+
+      {!enoughPlayers && (
+        <p className="rounded-xl border border-dashed bg-muted/50 px-4 py-3 text-center text-sm text-muted-foreground">
+          Add at least <span className="font-semibold text-foreground">4 players</span> to
+          generate a rotation.
+        </p>
+      )}
+
+      {/* Host options — only relevant once a host is chosen */}
+      {host && (
+        <section className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Crown className="size-5" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 className="font-display text-lg font-bold leading-tight">Host options</h2>
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{host}</span> is the host.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={hostSitsOutFirstRound && canHostSitOut}
+            disabled={!canHostSitOut}
+            onClick={() => onHostSitsOutChange(!hostSitsOutFirstRound)}
+            className="flex w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors enabled:hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span
+              className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
+                hostSitsOutFirstRound && canHostSitOut
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-input bg-transparent"
+              }`}
+              aria-hidden="true"
+            >
+              {hostSitsOutFirstRound && canHostSitOut && <Check className="size-3.5" />}
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-foreground">
+                Host sits out the first round
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                {canHostSitOut
+                  ? `${host} takes a sit-out in round 1 so a guest gets on court first. Rest stays fair across the session.`
+                  : "Available only when there are more players than the courts can seat — right now everyone plays every round."}
+              </span>
+            </span>
+          </button>
+        </section>
+      )}
 
       {/* Session settings */}
       <section className="rounded-2xl border bg-card p-4 shadow-sm sm:p-6">
@@ -237,13 +334,6 @@ export function PlayerEntry({
           </div>
         </div>
       </section>
-
-      {!enoughPlayers && (
-        <p className="rounded-xl border border-dashed bg-muted/50 px-4 py-3 text-center text-sm text-muted-foreground">
-          Add at least <span className="font-semibold text-foreground">4 players</span> to
-          generate a rotation.
-        </p>
-      )}
 
       <Button
         type="button"
