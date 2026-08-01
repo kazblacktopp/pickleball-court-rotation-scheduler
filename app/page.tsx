@@ -1,13 +1,14 @@
 "use client"
 
-import { useEffect, useReducer, useRef } from "react"
-import { RefreshCw, ChevronLeft, Table2, Maximize2 } from "lucide-react"
+import { useEffect, useReducer, useRef, useState } from "react"
+import { RefreshCw, ChevronLeft, Table2, Maximize2, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PlayerEntry } from "@/components/player-entry"
 import { ScheduleTable } from "@/components/schedule-table"
 import { CurrentRound } from "@/components/current-round"
+import { RosterChange } from "@/components/roster-change"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { autoCourts, generateRotation, type RotationResult } from "@/lib/rotation"
+import { autoCourts, extendRotation, generateRotation, type RotationResult } from "@/lib/rotation"
 
 const STORAGE_KEY = "pickleball-rotation-v1"
 
@@ -47,6 +48,7 @@ type Action =
   | { type: "SET_ROUNDS"; rounds: number }
   | { type: "GENERATE" }
   | { type: "REGENERATE" }
+  | { type: "APPLY_ROSTER_CHANGE"; firstRound: number; courts: number; add: string[]; remove: string[] }
   | { type: "SET_SCREEN"; screen: Screen }
   | { type: "SET_VIEW"; view: View }
   | { type: "SET_INDEX"; index: number }
@@ -98,6 +100,36 @@ function reducer(state: State, action: Action): State {
     case "REGENERATE": {
       const next = { ...state, seed: Math.floor(Math.random() * 1_000_000) + 1, currentIndex: 0 }
       return { ...next, result: build(next) }
+    }
+    case "APPLY_ROSTER_CHANGE": {
+      if (!state.result) return state
+
+      // New active roster: drop early departures, fold in deduped late arrivals.
+      const removeSet = new Set(action.remove)
+      const kept = state.players.filter((p) => !removeSet.has(p))
+      const existing = new Set(kept.map((p) => p.toLowerCase()))
+      const additions = action.add.filter((n) => {
+        const key = n.trim().toLowerCase()
+        if (!key || existing.has(key)) return false
+        existing.add(key)
+        return true
+      })
+      const players = [...kept, ...additions.map((n) => n.trim())]
+
+      // Not enough players left to run a court — ignore (UI blocks this too).
+      if (players.length < 4) return state
+
+      const totalRounds = state.result.rounds.length
+      const firstRound = Math.min(Math.max(1, action.firstRound), totalRounds)
+      const lockedRounds = state.result.rounds.slice(0, firstRound - 1)
+      // Court count comes straight from the panel — never auto-bumped by a
+      // roster change. Clamp to what the new player count can actually fill.
+      const courts = Math.min(Math.max(1, action.courts), autoCourts(players.length))
+      const seed = Math.floor(Math.random() * 1_000_000) + 1
+      const result = extendRotation(lockedRounds, players, courts, totalRounds, seed)
+
+      // Mark courts as manually set so later edits don't silently re-sync either.
+      return { ...state, players, courts, courtsTouched: true, seed, result }
     }
     case "SET_SCREEN":
       return { ...state, screen: action.screen }
@@ -190,6 +222,7 @@ function Results({
   const restValues = Object.values(result.sitOutCounts)
   const minRest = restValues.length ? Math.min(...restValues) : 0
   const maxRest = restValues.length ? Math.max(...restValues) : 0
+  const [rosterOpen, setRosterOpen] = useState(false)
 
   return (
     <div className="flex flex-col gap-5">
@@ -202,16 +235,42 @@ function Results({
           <ChevronLeft className="size-4" aria-hidden="true" />
           Edit players
         </button>
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => dispatch({ type: "REGENERATE" })}
-          className="rounded-xl"
-        >
-          <RefreshCw className="size-4" aria-hidden="true" />
-          Reshuffle
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setRosterOpen((o) => !o)}
+            aria-expanded={rosterOpen}
+            className="rounded-xl"
+          >
+            <Users className="size-4" aria-hidden="true" />
+            Update roster
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => dispatch({ type: "REGENERATE" })}
+            className="rounded-xl"
+          >
+            <RefreshCw className="size-4" aria-hidden="true" />
+            Reshuffle
+          </Button>
+        </div>
       </div>
+
+      {rosterOpen && (
+        <RosterChange
+          players={state.players}
+          totalRounds={result.rounds.length}
+          defaultFirstRound={state.currentIndex + 2}
+          currentCourts={result.effectiveCourts}
+          onCancel={() => setRosterOpen(false)}
+          onApply={(change) => {
+            dispatch({ type: "APPLY_ROSTER_CHANGE", ...change })
+            setRosterOpen(false)
+          }}
+        />
+      )}
 
       {/* Summary chips */}
       <div className="grid grid-cols-3 gap-2">
@@ -220,11 +279,12 @@ function Results({
         <Stat label="Rounds" value={result.rounds.length} />
       </div>
       <p className="-mt-2 text-xs text-muted-foreground">
-        Rest spread: everyone sits {minRest === maxRest ? minRest : `${minRest}–${maxRest}`}{" "}
-        {maxRest === 1 && minRest === 1 ? "time" : "times"}.
+        {result.rosterChanged
+          ? `Total sit-outs range ${minRest === maxRest ? minRest : `${minRest}–${maxRest}`} across everyone who played — the spread reflects a mid-session roster change; rest stays fair from the change onward. `
+          : `Rest spread: everyone sits ${minRest === maxRest ? minRest : `${minRest}–${maxRest}`} ${maxRest === 1 && minRest === 1 ? "time" : "times"}. `}
         {result.repeatPartnerships > 0
-          ? ` ${result.repeatPartnerships} repeated partnership${result.repeatPartnerships === 1 ? "" : "s"}.`
-          : " No repeated partnerships."}
+          ? `${result.repeatPartnerships} repeated partnership${result.repeatPartnerships === 1 ? "" : "s"}.`
+          : "No repeated partnerships."}
         {result.hasPartialCourt &&
           " A 3-player court is in use; turns on it rotate evenly and don't count as a sit-out."}
       </p>
