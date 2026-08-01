@@ -58,6 +58,7 @@ No need for a perfect combinatorial solution — the paper templates themselves 
 
 - Skill ratings per player (the paper templates tag players 1 or 2) and rating-balanced pairings.
 - Mid-session roster changes (late arrivals / early departures) that preserve fairness counters.
+- Host flag: designate a player as the host and let them opt to sit out the first round when the roster exceeds the court capacity (see `docs/features/feature-host-sit-out-first-round.md`).
 - Score entry and a session ladder.
 - Shareable link so players can view the draw on their own phones.
 - DUPR-style rating integration.

@@ -20,6 +20,18 @@ export interface RoundSchedule {
   sittingOut: string[]
 }
 
+/** Optional scheduling hints for {@link generateRotation}. */
+export interface RotationOptions {
+  /** Name of the player acting as host, if any. */
+  host?: string | null
+  /**
+   * When true (and the host is in the roster), the host is guaranteed a sit-out
+   * in round 1 — the common courtesy of the organiser benching first when the
+   * roster is bigger than the courts can seat. Ignored if there are no sit-outs.
+   */
+  hostSitsOutFirstRound?: boolean
+}
+
 export interface RotationResult {
   rounds: RoundSchedule[]
   effectiveCourts: number
@@ -111,6 +123,13 @@ function generateSegment(
    * sit-out candidate).
    */
   mustPlayFirstRound: Set<string> = new Set(),
+  /**
+   * Players who must sit out in the first round of this segment, if there are
+   * sit-out slots to give — used for the host courtesy of benching first. The
+   * mirror image of `mustPlayFirstRound`; yields gracefully when there are more
+   * forced sitters than open slots.
+   */
+  mustSitOutFirstRound: Set<string> = new Set(),
 ): SegmentResult {
   const maxCourts = maxUsableCourts(roster.length)
   const effectiveCourts = Math.max(0, Math.min(courts, maxCourts))
@@ -140,9 +159,16 @@ function generateSegment(
     // In the segment's first round, protect any must-play arrivals by ordering
     // them last so they are only ever benched if there aren't enough others.
     const protect = r === 0 && mustPlayFirstRound.size > 0 ? mustPlayFirstRound : null
+    const forceSit = r === 0 && mustSitOutFirstRound.size > 0 ? mustSitOutFirstRound : null
     let sittingOut: string[] = []
     if (sitPerRound > 0) {
       const ordered = shuffle(roster, rand).sort((a, b) => {
+        // Forced sitters (the host benching first) claim slots ahead of everyone.
+        if (forceSit) {
+          const af = forceSit.has(a) ? 0 : 1
+          const bf = forceSit.has(b) ? 0 : 1
+          if (af !== bf) return af - bf
+        }
         if (protect) {
           const ap = protect.has(a) ? 1 : 0
           const bp = protect.has(b) ? 1 : 0
@@ -252,6 +278,7 @@ export function generateRotation(
   courts: number,
   rounds: number,
   seed = 1,
+  options: RotationOptions = {},
 ): RotationResult {
   const rand = mulberry32(seed)
   const roster = players.map((p) => p.trim()).filter(Boolean)
@@ -263,7 +290,15 @@ export function generateRotation(
     opponent: new Map(),
   }
 
-  const seg = generateSegment(roster, courts, rounds, 1, rand, hist)
+  // The host sits out round 1 only when asked and actually in the roster; the
+  // segment builder ignores it gracefully if there are no sit-out slots.
+  const mustSitOut = new Set<string>()
+  const host = options.host?.trim()
+  if (options.hostSitsOutFirstRound && host && roster.includes(host)) {
+    mustSitOut.add(host)
+  }
+
+  const seg = generateSegment(roster, courts, rounds, 1, rand, hist, new Set(), mustSitOut)
 
   // Full courts seat 4. If 3 players are left over we add one shared
   // 3-player court, so the maximum usable courts can be one higher.
@@ -452,4 +487,20 @@ export function maxUsableCourts(playerCount: number): number {
 
 export function autoCourts(playerCount: number): number {
   return Math.max(1, maxUsableCourts(playerCount))
+}
+
+/**
+ * How many players sit out each round for a given roster and selected court
+ * count. Mirrors the seating maths in `generateSegment` (full courts of 4, plus
+ * at most one shared 3-player court) so callers — like the "host sits out first
+ * round" toggle — can tell whether any round actually has sit-outs to give.
+ */
+export function sitOutsPerRound(playerCount: number, courts: number): number {
+  const effectiveCourts = Math.max(0, Math.min(courts, maxUsableCourts(playerCount)))
+  if (playerCount < 4 || effectiveCourts === 0) return 0
+  const capacity = effectiveCourts * 4
+  const hasPartialCourt = playerCount < capacity
+  const fullCourts = hasPartialCourt ? effectiveCourts - 1 : effectiveCourts
+  const playingPerRound = fullCourts * 4 + (hasPartialCourt ? 3 : 0)
+  return Math.max(0, playerCount - playingPerRound)
 }
