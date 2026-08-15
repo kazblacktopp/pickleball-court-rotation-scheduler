@@ -1,14 +1,21 @@
 "use client"
 
 import { useEffect, useReducer, useRef, useState } from "react"
-import { RefreshCw, ChevronLeft, Table2, Maximize2, Users } from "lucide-react"
+import { RefreshCw, ChevronLeft, Table2, Maximize2, Users, Armchair } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PlayerEntry } from "@/components/player-entry"
 import { ScheduleTable } from "@/components/schedule-table"
 import { CurrentRound } from "@/components/current-round"
 import { RosterChange } from "@/components/roster-change"
+import { SkipRound } from "@/components/skip-round"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { autoCourts, extendRotation, generateRotation, type RotationResult } from "@/lib/rotation"
+import {
+  autoCourts,
+  benchForRound,
+  extendRotation,
+  generateRotation,
+  type RotationResult,
+} from "@/lib/rotation"
 
 const STORAGE_KEY = "pickleball-rotation-v1"
 
@@ -26,6 +33,10 @@ interface State {
   hostSitsOutFirstRound: boolean
   seed: number
   result: RotationResult | null
+  /** A mid-session "Update roster" change has been applied to the current draw. */
+  hadRosterChange: boolean
+  /** A one-round "Sit out" bench has been applied to the current draw. */
+  hadVoluntarySitOut: boolean
   screen: Screen
   view: View
   currentIndex: number
@@ -40,6 +51,8 @@ const initialState: State = {
   hostSitsOutFirstRound: false,
   seed: 1,
   result: null,
+  hadRosterChange: false,
+  hadVoluntarySitOut: false,
   screen: "entry",
   view: "table",
   currentIndex: 0,
@@ -57,6 +70,7 @@ type Action =
   | { type: "GENERATE" }
   | { type: "REGENERATE" }
   | { type: "APPLY_ROSTER_CHANGE"; firstRound: number; courts: number; add: string[]; remove: string[] }
+  | { type: "SKIP_ROUND"; round: number; benched: string[] }
   | { type: "SET_SCREEN"; screen: Screen }
   | { type: "SET_VIEW"; view: View }
   | { type: "SET_INDEX"; index: number }
@@ -123,11 +137,24 @@ function reducer(state: State, action: Action): State {
         rounds: Number.isFinite(action.rounds) ? Math.max(1, action.rounds) : 1,
       }
     case "GENERATE": {
-      const next = { ...state, currentIndex: 0, screen: "results" as Screen }
+      // A fresh draw clears any prior mid-session change markers.
+      const next = {
+        ...state,
+        currentIndex: 0,
+        screen: "results" as Screen,
+        hadRosterChange: false,
+        hadVoluntarySitOut: false,
+      }
       return { ...next, result: build(next) }
     }
     case "REGENERATE": {
-      const next = { ...state, seed: Math.floor(Math.random() * 1_000_000) + 1, currentIndex: 0 }
+      const next = {
+        ...state,
+        seed: Math.floor(Math.random() * 1_000_000) + 1,
+        currentIndex: 0,
+        hadRosterChange: false,
+        hadVoluntarySitOut: false,
+      }
       return { ...next, result: build(next) }
     }
     case "APPLY_ROSTER_CHANGE": {
@@ -170,7 +197,33 @@ function reducer(state: State, action: Action): State {
         hostSitsOutFirstRound: host ? state.hostSitsOutFirstRound : false,
         seed,
         result,
+        hadRosterChange: true,
       }
+    }
+    case "SKIP_ROUND": {
+      if (!state.result) return state
+
+      // Benched players sit out one round only; the roster itself is unchanged.
+      const benchedSet = new Set(action.benched)
+      const available = state.players.filter((p) => !benchedSet.has(p))
+      // Need at least a full court left to play the round (UI blocks this too).
+      if (available.length < 4) return state
+
+      const totalRounds = state.result.rounds.length
+      const round = Math.min(Math.max(1, action.round), totalRounds)
+      const lockedRounds = state.result.rounds.slice(0, round - 1)
+      const seed = Math.floor(Math.random() * 1_000_000) + 1
+      const result = benchForRound(
+        lockedRounds,
+        state.players,
+        [...benchedSet],
+        state.courts,
+        totalRounds,
+        seed,
+      )
+
+      // Jump the Courtside stepper to the round the skip takes effect.
+      return { ...state, seed, result, currentIndex: round - 1, hadVoluntarySitOut: true }
     }
     case "SET_SCREEN":
       return { ...state, screen: action.screen }
@@ -268,6 +321,18 @@ function Results({
   const minRest = restValues.length ? Math.min(...restValues) : 0
   const maxRest = restValues.length ? Math.max(...restValues) : 0
   const [rosterOpen, setRosterOpen] = useState(false)
+  const [skipOpen, setSkipOpen] = useState(false)
+
+  // Note which mid-session changes shaped this draw, so a wider rest spread reads
+  // as expected rather than a bug.
+  const changeQualifier =
+    state.hadRosterChange && state.hadVoluntarySitOut
+      ? " (roster changed + voluntary sit out)"
+      : state.hadRosterChange
+        ? " (roster changed)"
+        : state.hadVoluntarySitOut
+          ? " (voluntary sit out)"
+          : ""
 
   return (
     <div className="flex flex-col gap-5">
@@ -280,11 +345,27 @@ function Results({
           <ChevronLeft className="size-4" aria-hidden="true" />
           Edit players
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="secondary"
-            onClick={() => setRosterOpen((o) => !o)}
+            onClick={() => {
+              setSkipOpen((o) => !o)
+              setRosterOpen(false)
+            }}
+            aria-expanded={skipOpen}
+            className="rounded-xl"
+          >
+            <Armchair className="size-4" aria-hidden="true" />
+            Sit out next round
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              setRosterOpen((o) => !o)
+              setSkipOpen(false)
+            }}
             aria-expanded={rosterOpen}
             className="rounded-xl"
           >
@@ -302,6 +383,19 @@ function Results({
           </Button>
         </div>
       </div>
+
+      {skipOpen && (
+        <SkipRound
+          players={state.players}
+          totalRounds={result.rounds.length}
+          defaultRound={state.currentIndex + 2}
+          onCancel={() => setSkipOpen(false)}
+          onApply={(change) => {
+            dispatch({ type: "SKIP_ROUND", ...change })
+            setSkipOpen(false)
+          }}
+        />
+      )}
 
       {rosterOpen && (
         <RosterChange
@@ -323,15 +417,14 @@ function Results({
         <Stat label="Courts" value={result.effectiveCourts} />
         <Stat label="Rounds" value={result.rounds.length} />
       </div>
-      <p className="-mt-2 text-xs text-muted-foreground">
-        {result.rosterChanged
-          ? `Total sit-outs range ${minRest === maxRest ? minRest : `${minRest}–${maxRest}`} across everyone who played — the spread reflects a mid-session roster change; rest stays fair from the change onward. `
-          : `Rest spread: everyone sits ${minRest === maxRest ? minRest : `${minRest}–${maxRest}`} ${maxRest === 1 && minRest === 1 ? "time" : "times"}. `}
+      <p className="-mt-2 text-center text-xs text-muted-foreground">
+        {`Everyone sits ${minRest === maxRest ? minRest : `${minRest}–${maxRest}`} ${maxRest === 1 && minRest === 1 ? "time" : "times"}`}
+        {changeQualifier}
+        {" · "}
         {result.repeatPartnerships > 0
-          ? `${result.repeatPartnerships} repeated partnership${result.repeatPartnerships === 1 ? "" : "s"}.`
-          : "No repeated partnerships."}
-        {result.hasPartialCourt &&
-          " A 3-player court is in use; turns on it rotate evenly and don't count as a sit-out."}
+          ? `${result.repeatPartnerships} repeated partnership${result.repeatPartnerships === 1 ? "" : "s"}`
+          : "no repeated partnerships"}
+        {result.hasPartialCourt && " · 3-player court in use"}
       </p>
 
       {/* View toggle */}
