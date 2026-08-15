@@ -33,6 +33,12 @@ interface PlayerEntryProps {
   onSetHost: (name: string | null) => void
   onHostSitsOutChange: (value: boolean) => void
   onGenerate: () => void
+  /** True once a draw exists — switches the button to "Generate new rotation". */
+  hasExistingDraw: boolean
+  /** True when the setup differs from the draw currently in state. */
+  settingsChanged: boolean
+  /** Return to the existing draw without regenerating. Omitted when no draw exists yet. */
+  onBackToResults?: () => void
 }
 
 export function PlayerEntry({
@@ -50,6 +56,9 @@ export function PlayerEntry({
   onSetHost,
   onHostSitsOutChange,
   onGenerate,
+  hasExistingDraw,
+  settingsChanged,
+  onBackToResults,
 }: PlayerEntryProps) {
   const [value, setValue] = useState("")
 
@@ -111,6 +120,9 @@ export function PlayerEntry({
   }
 
   const enoughPlayers = players.length >= 4
+  // With a draw already in place, only allow a re-draw once the setup has
+  // actually changed — otherwise the existing draw would be needlessly discarded.
+  const canGenerate = enoughPlayers && (!hasExistingDraw || settingsChanged)
   // `autoCourts` already accounts for an extra shared 3-player court when 3
   // players are left over, so it doubles as the highest selectable court count.
   const maxCourts = autoCourts
@@ -338,12 +350,24 @@ export function PlayerEntry({
       <Button
         type="button"
         size="lg"
-        disabled={!enoughPlayers}
+        disabled={!canGenerate}
         onClick={onGenerate}
         className="h-14 rounded-2xl text-base font-semibold shadow-sm"
       >
-        Generate rotation
+        {hasExistingDraw ? "Generate new rotation" : "Generate rotation"}
       </Button>
+
+      {onBackToResults && (
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          onClick={onBackToResults}
+          className="h-12 rounded-2xl text-base font-medium"
+        >
+          Back to results
+        </Button>
+      )}
     </div>
   )
 }

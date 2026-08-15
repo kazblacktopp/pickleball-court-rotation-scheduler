@@ -33,6 +33,9 @@ interface State {
   hostSitsOutFirstRound: boolean
   seed: number
   result: RotationResult | null
+  /** Signature of the inputs that produced `result`, so the entry screen can tell
+   *  whether the setup has since changed. Null until the first draw. */
+  generatedSignature: string | null
   /** A mid-session "Update roster" change has been applied to the current draw. */
   hadRosterChange: boolean
   /** A one-round "Sit out" bench has been applied to the current draw. */
@@ -51,6 +54,7 @@ const initialState: State = {
   hostSitsOutFirstRound: false,
   seed: 1,
   result: null,
+  generatedSignature: null,
   hadRosterChange: false,
   hadVoluntarySitOut: false,
   screen: "entry",
@@ -81,6 +85,19 @@ function syncCourts(state: State, players: string[]): number {
 
 function build(state: State): RotationResult {
   return generateRotation(state.players, state.courts, state.rounds, state.seed, {
+    host: state.host,
+    hostSitsOutFirstRound: state.hostSitsOutFirstRound,
+  })
+}
+
+/** A stable fingerprint of every input that shapes the draw (the random seed
+ *  aside). Comparing it against `generatedSignature` tells us whether the setup
+ *  has changed since the current draw was produced. */
+function inputsSignature(state: State): string {
+  return JSON.stringify({
+    players: state.players,
+    courts: state.courts,
+    rounds: state.rounds,
     host: state.host,
     hostSitsOutFirstRound: state.hostSitsOutFirstRound,
   })
@@ -145,7 +162,7 @@ function reducer(state: State, action: Action): State {
         hadRosterChange: false,
         hadVoluntarySitOut: false,
       }
-      return { ...next, result: build(next) }
+      return { ...next, result: build(next), generatedSignature: inputsSignature(next) }
     }
     case "REGENERATE": {
       const next = {
@@ -155,7 +172,7 @@ function reducer(state: State, action: Action): State {
         hadRosterChange: false,
         hadVoluntarySitOut: false,
       }
-      return { ...next, result: build(next) }
+      return { ...next, result: build(next), generatedSignature: inputsSignature(next) }
     }
     case "APPLY_ROSTER_CHANGE": {
       if (!state.result) return state
@@ -188,7 +205,7 @@ function reducer(state: State, action: Action): State {
       const host = state.host && removeSet.has(state.host) ? null : state.host
 
       // Mark courts as manually set so later edits don't silently re-sync either.
-      return {
+      const nextState = {
         ...state,
         players,
         courts,
@@ -199,6 +216,8 @@ function reducer(state: State, action: Action): State {
         result,
         hadRosterChange: true,
       }
+      // The draw now reflects the new roster, so re-baseline the signature.
+      return { ...nextState, generatedSignature: inputsSignature(nextState) }
     }
     case "SKIP_ROUND": {
       if (!state.result) return state
@@ -222,8 +241,16 @@ function reducer(state: State, action: Action): State {
         seed,
       )
 
-      // Jump the Courtside stepper to the round the skip takes effect.
-      return { ...state, seed, result, currentIndex: round - 1, hadVoluntarySitOut: true }
+      // Jump the Courtside stepper to the round the skip takes effect. The roster
+      // itself is unchanged, so the signature stays as-is.
+      return {
+        ...state,
+        seed,
+        result,
+        currentIndex: round - 1,
+        hadVoluntarySitOut: true,
+        generatedSignature: inputsSignature(state),
+      }
     }
     case "SET_SCREEN":
       return { ...state, screen: action.screen }
@@ -301,6 +328,13 @@ export default function Page() {
           onSetHost={(name) => dispatch({ type: "SET_HOST", name })}
           onHostSitsOutChange={(value) => dispatch({ type: "SET_HOST_SITS_OUT", value })}
           onGenerate={() => dispatch({ type: "GENERATE" })}
+          hasExistingDraw={state.result != null}
+          settingsChanged={inputsSignature(state) !== state.generatedSignature}
+          onBackToResults={
+            state.result
+              ? () => dispatch({ type: "SET_SCREEN", screen: "results" })
+              : undefined
+          }
         />
       ) : (
         <Results state={state} dispatch={dispatch} />
@@ -354,7 +388,7 @@ function Results({
               setRosterOpen(false)
             }}
             aria-expanded={skipOpen}
-            className="rounded-xl"
+            className="rounded-xl aria-expanded:bg-primary aria-expanded:text-primary-foreground aria-expanded:hover:bg-primary/90"
           >
             <Armchair className="size-4" aria-hidden="true" />
             Sit out next round
@@ -367,7 +401,7 @@ function Results({
               setSkipOpen(false)
             }}
             aria-expanded={rosterOpen}
-            className="rounded-xl"
+            className="rounded-xl aria-expanded:bg-primary aria-expanded:text-primary-foreground aria-expanded:hover:bg-primary/90"
           >
             <Users className="size-4" aria-hidden="true" />
             Update roster
