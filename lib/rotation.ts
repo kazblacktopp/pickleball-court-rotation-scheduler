@@ -444,6 +444,64 @@ export function extendRotation(
 }
 
 /**
+ * Bench one or more players for a single round, then return them to normal play.
+ *
+ * Unlike {@link extendRotation} (a permanent roster change), the benched players
+ * are absent for exactly the target round `F = lockedRounds.length + 1` and are
+ * back in the draw from `F+1` on. `lockedRounds` are kept verbatim; their
+ * fairness history is replayed so the continuation picks up from the true
+ * mid-session state.
+ *
+ * Round `F` is generated for the *available* players only — so the benched
+ * players genuinely don't play, and the courts reshape down (fewer courts, or a
+ * shared 3-player court) if the reduced count warrants it. The benched players
+ * are then recorded as sitting out that round, each taking one rest turn, so the
+ * equal-rest selector won't immediately bench them again once they return.
+ */
+export function benchForRound(
+  lockedRounds: RoundSchedule[],
+  roster: string[],
+  benched: string[],
+  courts: number,
+  totalRounds: number,
+  seed: number,
+): RotationResult {
+  const activeRoster = roster.map((p) => p.trim()).filter(Boolean)
+  const benchedSet = new Set(benched.map((p) => p.trim()).filter(Boolean))
+  const available = activeRoster.filter((p) => !benchedSet.has(p))
+
+  const { hist } = replayHistory(lockedRounds)
+  // Seed counters for anyone not yet seen (e.g. benching in round 1, before
+  // anyone has appeared in a locked round).
+  for (const p of activeRoster) {
+    hist.sitOut[p] ??= 0
+    hist.partial[p] ??= 0
+  }
+
+  const rand = mulberry32(seed)
+  const targetRound = lockedRounds.length + 1
+
+  // Round F: draw for the available players only. The court clamp lets the round
+  // reshape down so the benched players truly sit it out.
+  const benchCourts = Math.min(courts, maxUsableCourts(available.length))
+  const benchSeg = generateSegment(available, benchCourts, 1, targetRound, rand, hist)
+  const actuallyBenched = activeRoster.filter((p) => benchedSet.has(p))
+  if (benchSeg.rounds.length > 0) {
+    const round = benchSeg.rounds[0]
+    round.sittingOut = [...round.sittingOut, ...actuallyBenched]
+    for (const p of actuallyBenched) hist.sitOut[p] = (hist.sitOut[p] ?? 0) + 1
+  }
+
+  // Rounds F+1 … N: the full roster returns, continuing from the replayed +
+  // bumped history so rest self-corrects.
+  const roundsAfter = Math.max(0, totalRounds - targetRound)
+  const restSeg = generateSegment(activeRoster, courts, roundsAfter, targetRound + 1, rand, hist)
+
+  const allRounds = [...lockedRounds, ...benchSeg.rounds, ...restSeg.rounds]
+  return summarise(allRounds, seed, true)
+}
+
+/**
  * Build a fully-consistent `RotationResult` from a finished set of rounds by
  * recomputing every aggregate. `effectiveCourts` is the most courts used in any
  * single round, so a mid-session court-count change still renders correctly.
