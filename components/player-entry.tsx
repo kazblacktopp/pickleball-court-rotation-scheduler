@@ -33,6 +33,8 @@ interface PlayerEntryProps {
   onSetHost: (name: string | null) => void
   onHostSitsOutChange: (value: boolean) => void
   onGenerate: () => void
+  /** Return to the existing draw without regenerating. Omitted when no draw exists yet. */
+  onBackToResults?: () => void
 }
 
 export function PlayerEntry({
@@ -50,6 +52,7 @@ export function PlayerEntry({
   onSetHost,
   onHostSitsOutChange,
   onGenerate,
+  onBackToResults,
 }: PlayerEntryProps) {
   const [value, setValue] = useState("")
 
@@ -344,6 +347,18 @@ export function PlayerEntry({
       >
         Generate rotation
       </Button>
+
+      {onBackToResults && (
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          onClick={onBackToResults}
+          className="h-12 rounded-2xl text-base font-medium"
+        >
+          Back to results
+        </Button>
+      )}
     </div>
   )
 }

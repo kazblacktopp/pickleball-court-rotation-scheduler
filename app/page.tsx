@@ -301,6 +301,11 @@ export default function Page() {
           onSetHost={(name) => dispatch({ type: "SET_HOST", name })}
           onHostSitsOutChange={(value) => dispatch({ type: "SET_HOST_SITS_OUT", value })}
           onGenerate={() => dispatch({ type: "GENERATE" })}
+          onBackToResults={
+            state.result
+              ? () => dispatch({ type: "SET_SCREEN", screen: "results" })
+              : undefined
+          }
         />
       ) : (
         <Results state={state} dispatch={dispatch} />
@@ -354,7 +359,7 @@ function Results({
               setRosterOpen(false)
             }}
             aria-expanded={skipOpen}
-            className="rounded-xl"
+            className="rounded-xl aria-expanded:bg-primary aria-expanded:text-primary-foreground aria-expanded:hover:bg-primary/90"
           >
             <Armchair className="size-4" aria-hidden="true" />
             Sit out next round
@@ -367,7 +372,7 @@ function Results({
               setSkipOpen(false)
             }}
             aria-expanded={rosterOpen}
-            className="rounded-xl"
+            className="rounded-xl aria-expanded:bg-primary aria-expanded:text-primary-foreground aria-expanded:hover:bg-primary/90"
           >
             <Users className="size-4" aria-hidden="true" />
             Update roster
