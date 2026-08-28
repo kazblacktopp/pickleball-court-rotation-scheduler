@@ -475,7 +475,7 @@ function Results({
           </Button>
           <AlertDialog>
             <AlertDialogTrigger
-              className={buttonVariants({ variant: "ghost", className: "rounded-xl" })}
+              className={buttonVariants({ variant: "secondary", className: "rounded-xl" })}
             >
               <RotateCcw className="size-4" aria-hidden="true" />
               New session
