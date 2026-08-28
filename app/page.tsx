@@ -1,8 +1,19 @@
 "use client"
 
 import { useEffect, useReducer, useRef, useState } from "react"
-import { RefreshCw, ChevronLeft, Table2, Maximize2, Users, Armchair } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { RefreshCw, ChevronLeft, Table2, Maximize2, Users, Armchair, RotateCcw } from "lucide-react"
+import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { PlayerEntry } from "@/components/player-entry"
 import { ScheduleTable } from "@/components/schedule-table"
 import { CurrentRound } from "@/components/current-round"
@@ -18,6 +29,17 @@ import {
 } from "@/lib/rotation"
 
 const STORAGE_KEY = "pickleball-rotation-v1"
+/**
+ * A saved draw is only restored while it plausibly belongs to the session in
+ * progress. Past this age it is a stale rotation from a previous outing, so we
+ * start clean rather than dropping the user into last week's schedule.
+ */
+const STORAGE_MAX_AGE_MS = 12 * 60 * 60 * 1000
+
+interface SavedSession {
+  savedAt: number
+  state: State
+}
 
 type View = "table" | "courtside"
 type Screen = "entry" | "results"
@@ -63,6 +85,7 @@ type Action =
   | { type: "ADD_PLAYERS"; names: string[] }
   | { type: "REMOVE_PLAYER"; index: number }
   | { type: "CLEAR_ALL" }
+  | { type: "NEW_SESSION" }
   | { type: "SET_COURTS"; courts: number }
   | { type: "SET_ROUNDS"; rounds: number }
   | { type: "SET_HOST"; name: string | null }
@@ -116,6 +139,9 @@ function reducer(state: State, action: Action): State {
         host: null,
         hostSitsOutFirstRound: false,
       }
+    case "NEW_SESSION":
+      // Full reset back to an empty entry screen, discarding the saved draw.
+      return initialState
     case "SET_HOST":
       // Toggling off the host also drops the sit-out option that depends on it.
       return {
@@ -238,17 +264,33 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+function save(state: State) {
+  try {
+    const payload: SavedSession = { savedAt: Date.now(), state }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  } catch {
+    // ignore quota / serialization errors
+  }
+}
+
 export default function Page() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const hydrated = useRef(false)
 
-  // Load any saved session on mount.
+  // Load any saved session on mount. localStorage (not sessionStorage) so the
+  // draw survives the OS discarding the tab — which is what happens whenever the
+  // phone is locked for a few minutes mid-session.
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem(STORAGE_KEY)
+      const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
-        const parsed = JSON.parse(raw) as State
-        dispatch({ type: "HYDRATE", state: { ...initialState, ...parsed } })
+        const saved = JSON.parse(raw) as SavedSession
+        const age = Date.now() - (saved?.savedAt ?? 0)
+        if (saved?.state && age >= 0 && age < STORAGE_MAX_AGE_MS) {
+          dispatch({ type: "HYDRATE", state: { ...initialState, ...saved.state } })
+        } else {
+          localStorage.removeItem(STORAGE_KEY)
+        }
       }
     } catch {
       // ignore malformed storage
@@ -257,14 +299,30 @@ export default function Page() {
   }, [])
 
   // Persist whenever state changes (after initial hydration).
+  const latest = useRef(state)
+  latest.current = state
+
   useEffect(() => {
     if (!hydrated.current) return
-    try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    } catch {
-      // ignore quota / serialization errors
-    }
+    save(state)
   }, [state])
+
+  // Backstop for the discard path: iOS can freeze or kill a backgrounded tab
+  // without running anything further, so flush on the way out as well.
+  useEffect(() => {
+    const flush = () => {
+      if (hydrated.current) save(latest.current)
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush()
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+    window.addEventListener("pagehide", flush)
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility)
+      window.removeEventListener("pagehide", flush)
+    }
+  }, [])
 
   const showResults = state.screen === "results" && state.result
 
@@ -381,6 +439,32 @@ function Results({
             <RefreshCw className="size-4" aria-hidden="true" />
             Reshuffle
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger
+              className={buttonVariants({ variant: "ghost", className: "rounded-xl" })}
+            >
+              <RotateCcw className="size-4" aria-hidden="true" />
+              New session
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Start a new session?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This discards the saved rotation and all player names, and returns to an
+                  empty entry screen. This action can&apos;t be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => dispatch({ type: "NEW_SESSION" })}
+                  className="bg-destructive text-white hover:bg-destructive/90"
+                >
+                  Start new session
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
