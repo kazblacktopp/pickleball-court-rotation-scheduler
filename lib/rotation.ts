@@ -100,13 +100,39 @@ interface SegmentResult {
   hasPartialCourt: boolean
 }
 
+/** First-round and continuity hints for {@link generateSegment}. */
+interface SegmentHints {
+  /**
+   * Players who must not sit out in the first round of this segment — used so a
+   * late arrival plays the round they are added to instead of being benched on
+   * arrival (their low seeded rest count would otherwise make them a prime
+   * sit-out candidate).
+   */
+  mustPlayFirstRound?: Set<string>
+  /**
+   * Players who must sit out in the first round of this segment, if there are
+   * sit-out slots to give — used for the host courtesy of benching first. The
+   * mirror image of `mustPlayFirstRound`; yields gracefully when there are more
+   * forced sitters than open slots.
+   */
+  mustSitOutFirstRound?: Set<string>
+  /**
+   * Who sat out the round immediately before this segment. They are held back
+   * from the first round's sit-out draw so a rest never runs back-to-back
+   * across a segment boundary.
+   */
+  previousSitters?: Set<string>
+}
+
 /**
  * Build a run of rounds for a fixed roster, continuing from — and mutating —
  * the supplied fairness history. This is the shared engine behind both a
  * from-scratch schedule and a mid-session continuation.
  *
  * Fairness:
- *  - Sit-outs rotate so rest counts differ by at most 1.
+ *  - Nobody sits out two rounds running unless there aren't enough rested
+ *    players to fill the bench.
+ *  - Sit-outs otherwise rotate so rest counts differ by at most 1.
  *  - A greedy scorer minimises repeated partners and opponents.
  */
 function generateSegment(
@@ -116,21 +142,13 @@ function generateSegment(
   startNumber: number,
   rand: () => number,
   hist: HistoryMaps,
-  /**
-   * Players who must not sit out in the first round of this segment — used so a
-   * late arrival plays the round they are added to instead of being benched on
-   * arrival (their low seeded rest count would otherwise make them a prime
-   * sit-out candidate).
-   */
-  mustPlayFirstRound: Set<string> = new Set(),
-  /**
-   * Players who must sit out in the first round of this segment, if there are
-   * sit-out slots to give — used for the host courtesy of benching first. The
-   * mirror image of `mustPlayFirstRound`; yields gracefully when there are more
-   * forced sitters than open slots.
-   */
-  mustSitOutFirstRound: Set<string> = new Set(),
+  hints: SegmentHints = {},
 ): SegmentResult {
+  const {
+    mustPlayFirstRound = new Set<string>(),
+    mustSitOutFirstRound = new Set<string>(),
+    previousSitters = new Set<string>(),
+  } = hints
   const maxCourts = maxUsableCourts(roster.length)
   const effectiveCourts = Math.max(0, Math.min(courts, maxCourts))
 
@@ -154,6 +172,10 @@ function generateSegment(
 
   const out: RoundSchedule[] = []
 
+  // Who sat out the round before the one being built. Seeded from the caller so
+  // the rule holds across segment boundaries too.
+  let recentSitters = new Set(previousSitters)
+
   for (let r = 0; r < rounds; r++) {
     // 1. Choose who sits out: players who have rested the least sit first.
     // In the segment's first round, protect any must-play arrivals by ordering
@@ -174,12 +196,19 @@ function generateSegment(
           const bp = protect.has(b) ? 1 : 0
           if (ap !== bp) return ap - bp
         }
+        // Nobody rests twice running: last round's sitters go to the back of
+        // the queue, ahead of rest counts, so they are only benched again when
+        // there aren't enough rested players to fill the bench.
+        const ar = recentSitters.has(a) ? 1 : 0
+        const br = recentSitters.has(b) ? 1 : 0
+        if (ar !== br) return ar - br
         return hist.sitOut[a] - hist.sitOut[b]
       })
       sittingOut = ordered.slice(0, sitPerRound)
       sittingOut.forEach((p) => (hist.sitOut[p] += 1))
     }
     const sitSet = new Set(sittingOut)
+    recentSitters = sitSet
     let pool = shuffle(
       roster.filter((p) => !sitSet.has(p)),
       rand,
@@ -298,7 +327,9 @@ export function generateRotation(
     mustSitOut.add(host)
   }
 
-  const seg = generateSegment(roster, courts, rounds, 1, rand, hist, new Set(), mustSitOut)
+  const seg = generateSegment(roster, courts, rounds, 1, rand, hist, {
+    mustSitOutFirstRound: mustSitOut,
+  })
 
   // Full courts seat 4. If 3 players are left over we add one shared
   // 3-player court, so the maximum usable courts can be one higher.
@@ -381,6 +412,12 @@ function countRepeatPartnerships(rounds: RoundSchedule[]): number {
   return repeats
 }
 
+/** Who sat out the last of a run of rounds (empty when there are none). */
+function lastRoundSitters(rounds: RoundSchedule[]): Set<string> {
+  const last = rounds[rounds.length - 1]
+  return new Set(last ? last.sittingOut : [])
+}
+
 /**
  * Continue a session after a mid-session roster change.
  *
@@ -436,7 +473,10 @@ export function extendRotation(
     lockedRounds.length + 1,
     rand,
     hist,
-    arrivals,
+    {
+      mustPlayFirstRound: arrivals,
+      previousSitters: lastRoundSitters(lockedRounds),
+    },
   )
 
   const allRounds = [...lockedRounds, ...seg.rounds]
@@ -484,7 +524,9 @@ export function benchForRound(
   // Round F: draw for the available players only. The court clamp lets the round
   // reshape down so the benched players truly sit it out.
   const benchCourts = Math.min(courts, maxUsableCourts(available.length))
-  const benchSeg = generateSegment(available, benchCourts, 1, targetRound, rand, hist)
+  const benchSeg = generateSegment(available, benchCourts, 1, targetRound, rand, hist, {
+    previousSitters: lastRoundSitters(lockedRounds),
+  })
   const actuallyBenched = activeRoster.filter((p) => benchedSet.has(p))
   if (benchSeg.rounds.length > 0) {
     const round = benchSeg.rounds[0]
@@ -494,8 +536,14 @@ export function benchForRound(
 
   // Rounds F+1 … N: the full roster returns, continuing from the replayed +
   // bumped history so rest self-corrects.
+  // Round F's sitters — the explicitly benched players included — are held back
+  // from round F+1's draw so an explicit sit-out is never followed by another.
   const roundsAfter = Math.max(0, totalRounds - targetRound)
-  const restSeg = generateSegment(activeRoster, courts, roundsAfter, targetRound + 1, rand, hist)
+  const restSeg = generateSegment(activeRoster, courts, roundsAfter, targetRound + 1, rand, hist, {
+    previousSitters: benchSeg.rounds.length
+      ? lastRoundSitters(benchSeg.rounds)
+      : lastRoundSitters(lockedRounds),
+  })
 
   const allRounds = [...lockedRounds, ...benchSeg.rounds, ...restSeg.rounds]
   return summarise(allRounds, seed, true)

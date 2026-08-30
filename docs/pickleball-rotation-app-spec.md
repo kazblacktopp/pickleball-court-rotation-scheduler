@@ -24,9 +24,10 @@ Session-only data — no backend, no database, no auth. State lives in memory (a
 
 ### Fairness goals (in priority order)
 
-1. **Equal rest** — sit-outs rotate so the difference between any two players' total sit-outs never exceeds 1 across the session.
-2. **Partner variety** — minimise repeated partnerships; ideally no pair partners twice until all other options are exhausted.
-3. **Opponent variety** — minimise repeated matchups as a secondary objective.
+1. **No back-to-back rest** — a player never sits out two rounds in a row, unless there aren't enough rested players to fill the bench or the organiser explicitly sat them out for that round.
+2. **Equal rest** — sit-outs otherwise rotate so the difference between any two players' total sit-outs never exceeds 1 across the session.
+3. **Partner variety** — minimise repeated partnerships; ideally no pair partners twice until all other options are exhausted.
+4. **Opponent variety** — minimise repeated matchups as a secondary objective.
 
 ### Approach
 
