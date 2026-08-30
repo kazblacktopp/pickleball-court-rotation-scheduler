@@ -234,7 +234,7 @@ export function RosterChange({
                   <button
                     type="button"
                     onClick={() => removeAddition(name)}
-                    className="flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive hover:text-white"
+                    className="flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
                     aria-label={`Remove ${name}`}
                   >
                     <X className="size-3.5" aria-hidden="true" />

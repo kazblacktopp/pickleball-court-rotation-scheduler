@@ -205,7 +205,7 @@ export function PlayerEntry({
                       <button
                         type="button"
                         onClick={() => onRemovePlayer(i)}
-                        className="flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive hover:text-white"
+                        className="flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
                         aria-label={`Remove ${name}`}
                       >
                         <X className="size-3.5" aria-hidden="true" />
@@ -237,7 +237,7 @@ export function PlayerEntry({
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={onClearAll}
-                    className="bg-destructive text-white hover:bg-destructive/90"
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
                     Clear all
                   </AlertDialogAction>
