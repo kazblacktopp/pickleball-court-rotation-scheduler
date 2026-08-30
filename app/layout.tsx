@@ -1,13 +1,13 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
-import { Inter, Space_Grotesk } from 'next/font/google'
+import { Poppins } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
-const spaceGrotesk = Space_Grotesk({
+const poppins = Poppins({
   subsets: ['latin'],
-  variable: '--font-space-grotesk',
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-poppins',
 })
 
 export const metadata: Metadata = {
@@ -37,8 +37,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: 'light dark',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' },
+    { media: '(prefers-color-scheme: light)', color: '#FFF8F4' },
+    { media: '(prefers-color-scheme: dark)', color: '#0E141F' },
   ],
 }
 
@@ -51,7 +51,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${inter.variable} ${spaceGrotesk.variable} bg-background`}
+      className={`${poppins.variable} bg-background`}
     >
       <body className="font-sans antialiased">
         <ThemeProvider

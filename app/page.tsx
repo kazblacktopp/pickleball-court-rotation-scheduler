@@ -492,7 +492,7 @@ function Results({
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
                   onClick={() => dispatch({ type: "NEW_SESSION" })}
-                  className="bg-destructive text-white hover:bg-destructive/90"
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   Start new session
                 </AlertDialogAction>
