@@ -1,7 +1,16 @@
 "use client"
 
 import { useEffect, useReducer, useRef, useState } from "react"
-import { RefreshCw, ChevronLeft, Table2, Maximize2, Users, Armchair, RotateCcw } from "lucide-react"
+import {
+  RefreshCw,
+  ChevronLeft,
+  Table2,
+  Maximize2,
+  Users,
+  Armchair,
+  RotateCcw,
+  ListPlus,
+} from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -19,8 +28,10 @@ import { ScheduleTable } from "@/components/schedule-table"
 import { CurrentRound } from "@/components/current-round"
 import { RosterChange } from "@/components/roster-change"
 import { SkipRound } from "@/components/skip-round"
+import { AddRounds } from "@/components/add-rounds"
 import { ThemeToggle } from "@/components/theme-toggle"
 import {
+  appendRounds,
   autoCourts,
   benchForRound,
   extendRotation,
@@ -98,6 +109,7 @@ type Action =
   | { type: "REGENERATE" }
   | { type: "APPLY_ROSTER_CHANGE"; firstRound: number; courts: number; add: string[]; remove: string[] }
   | { type: "SKIP_ROUND"; round: number; benched: string[] }
+  | { type: "ADD_ROUNDS"; extraRounds: number }
   | { type: "SET_SCREEN"; screen: Screen }
   | { type: "SET_VIEW"; view: View }
   | { type: "SET_INDEX"; index: number }
@@ -278,6 +290,36 @@ function reducer(state: State, action: Action): State {
         generatedSignature: inputsSignature(state),
       }
     }
+    case "ADD_ROUNDS": {
+      if (!state.result) return state
+
+      // Extra rounds are appended to the played schedule, never a redraw: every
+      // existing round is kept and the new ones continue the same fairness
+      // history (rest counts, back-to-back rests, partner/opponent repeats).
+      const existing = state.result.rounds
+      const extraRounds = Math.floor(action.extraRounds)
+      if (!Number.isFinite(extraRounds) || extraRounds < 1) return state
+
+      const seed = Math.floor(Math.random() * 1_000_000) + 1
+      const result = appendRounds(
+        existing,
+        state.players,
+        state.courts,
+        extraRounds,
+        seed,
+        state.hadRosterChange,
+      )
+
+      // Keep the entry screen's round count in step with the longer session, so
+      // it doesn't read as an unapplied setting change.
+      const next = {
+        ...state,
+        seed,
+        rounds: existing.length + extraRounds,
+        result,
+      }
+      return { ...next, generatedSignature: inputsSignature(next) }
+    }
     case "SET_SCREEN":
       return { ...state, screen: action.screen }
     case "SET_VIEW":
@@ -414,6 +456,7 @@ function Results({
   const maxRest = restValues.length ? Math.max(...restValues) : 0
   const [rosterOpen, setRosterOpen] = useState(false)
   const [skipOpen, setSkipOpen] = useState(false)
+  const [addRoundsOpen, setAddRoundsOpen] = useState(false)
 
   // Note which mid-session changes shaped this draw, so a wider rest spread reads
   // as expected rather than a bug.
@@ -444,6 +487,7 @@ function Results({
             onClick={() => {
               setSkipOpen((o) => !o)
               setRosterOpen(false)
+              setAddRoundsOpen(false)
             }}
             aria-expanded={skipOpen}
             className="rounded-xl aria-expanded:bg-primary aria-expanded:text-primary-foreground aria-expanded:hover:bg-primary/90"
@@ -457,12 +501,27 @@ function Results({
             onClick={() => {
               setRosterOpen((o) => !o)
               setSkipOpen(false)
+              setAddRoundsOpen(false)
             }}
             aria-expanded={rosterOpen}
             className="rounded-xl aria-expanded:bg-primary aria-expanded:text-primary-foreground aria-expanded:hover:bg-primary/90"
           >
             <Users className="size-4" aria-hidden="true" />
             Update roster
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              setAddRoundsOpen((o) => !o)
+              setSkipOpen(false)
+              setRosterOpen(false)
+            }}
+            aria-expanded={addRoundsOpen}
+            className="rounded-xl aria-expanded:bg-primary aria-expanded:text-primary-foreground aria-expanded:hover:bg-primary/90"
+          >
+            <ListPlus className="size-4" aria-hidden="true" />
+            Add rounds
           </Button>
           <Button
             type="button"
@@ -511,6 +570,17 @@ function Results({
           onApply={(change) => {
             dispatch({ type: "SKIP_ROUND", ...change })
             setSkipOpen(false)
+          }}
+        />
+      )}
+
+      {addRoundsOpen && (
+        <AddRounds
+          totalRounds={result.rounds.length}
+          onCancel={() => setAddRoundsOpen(false)}
+          onApply={(change) => {
+            dispatch({ type: "ADD_ROUNDS", ...change })
+            setAddRoundsOpen(false)
           }}
         />
       )}

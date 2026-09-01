@@ -550,6 +550,47 @@ export function benchForRound(
 }
 
 /**
+ * Extend a session with more rounds, keeping every round already drawn.
+ *
+ * `existingRounds` are kept verbatim and their fairness history is replayed, so
+ * the appended rounds continue the same session state: rest keeps rotating
+ * towards equal counts, nobody rests in the round straight after resting, the
+ * shared 3-player court keeps rotating, and the partner/opponent scorer keeps
+ * avoiding pairings already used. The roster is unchanged — use
+ * {@link extendRotation} when players are joining or leaving.
+ */
+export function appendRounds(
+  existingRounds: RoundSchedule[],
+  roster: string[],
+  courts: number,
+  extraRounds: number,
+  seed: number,
+  rosterChanged = false,
+): RotationResult {
+  const active = roster.map((p) => p.trim()).filter(Boolean)
+  const { hist } = replayHistory(existingRounds)
+  // Anyone in the roster who never appeared in the played rounds still needs
+  // counters so the sorts below are well-defined.
+  for (const p of active) {
+    hist.sitOut[p] ??= 0
+    hist.partial[p] ??= 0
+  }
+
+  const rand = mulberry32(seed)
+  const seg = generateSegment(
+    active,
+    courts,
+    Math.max(0, extraRounds),
+    existingRounds.length + 1,
+    rand,
+    hist,
+    { previousSitters: lastRoundSitters(existingRounds) },
+  )
+
+  return summarise([...existingRounds, ...seg.rounds], seed, rosterChanged)
+}
+
+/**
  * Build a fully-consistent `RotationResult` from a finished set of rounds by
  * recomputing every aggregate. `effectiveCourts` is the most courts used in any
  * single round, so a mid-session court-count change still renders correctly.
