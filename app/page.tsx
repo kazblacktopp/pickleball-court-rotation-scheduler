@@ -523,15 +523,33 @@ function Results({
             <ListPlus className="size-4" aria-hidden="true" />
             Add rounds
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => dispatch({ type: "REGENERATE" })}
-            className="rounded-xl"
-          >
-            <RefreshCw className="size-4" aria-hidden="true" />
-            Reshuffle
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger
+              className={buttonVariants({ variant: "secondary", className: "rounded-xl" })}
+            >
+              <RefreshCw className="size-4" aria-hidden="true" />
+              Reshuffle
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reshuffle the rotation?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This draws a brand new rotation for the same players and courts, and
+                  returns you to round 1. Any roster updates or sit-outs applied to the
+                  current draw are discarded. This action can&apos;t be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => dispatch({ type: "REGENERATE" })}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Reshuffle
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <AlertDialog>
             <AlertDialogTrigger
               className={buttonVariants({ variant: "secondary", className: "rounded-xl" })}
