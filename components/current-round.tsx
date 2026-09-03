@@ -16,11 +16,14 @@ export function CurrentRound({ result, index, onPrev, onNext }: CurrentRoundProp
   if (!round) return null
 
   const total = result.rounds.length
+  // Court cards sit side by side on a wide screen, but only up to the width the
+  // round actually needs — a two-court round shouldn't stretch across a desktop.
+  const maxWidth = Math.max(672, round.matches.length * 320)
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="mx-auto flex w-full flex-col gap-4" style={{ maxWidth }}>
       {/* Round stepper */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3">
         <Button
           type="button"
           variant="outline"
@@ -56,8 +59,8 @@ export function CurrentRound({ result, index, onPrev, onNext }: CurrentRoundProp
         </Button>
       </div>
 
-      {/* Courts */}
-      <div className="flex flex-col gap-3">
+      {/* Courts — one per row on a phone, side by side once there is room. */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-3">
         {round.matches.map((m) => (
           <div
             key={m.court}

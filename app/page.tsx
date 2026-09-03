@@ -396,7 +396,14 @@ export default function Page() {
   const showResults = state.screen === "results" && state.result
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-2xl px-4 pb-16 pt-6 sm:pt-10">
+    // The entry form reads best as a single narrow column, but the results
+    // screen holds a wide schedule table, so it is allowed to grow into the
+    // space a tablet (landscape) or desktop actually offers.
+    <main
+      className={`mx-auto min-h-screen w-full px-4 pb-16 pt-6 sm:pt-10 ${
+        showResults ? "max-w-2xl lg:max-w-5xl xl:max-w-7xl" : "max-w-2xl"
+      }`}
+    >
       <header className="mb-6 flex items-center gap-3">
         <div className="flex size-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
           <span className="font-display text-xl font-bold" aria-hidden="true">
@@ -580,75 +587,85 @@ function Results({
       </div>
 
       {skipOpen && (
-        <SkipRound
-          players={state.players}
-          totalRounds={result.rounds.length}
-          defaultRound={state.currentIndex + 2}
-          onCancel={() => setSkipOpen(false)}
-          onApply={(change) => {
-            dispatch({ type: "SKIP_ROUND", ...change })
-            setSkipOpen(false)
-          }}
-        />
+        <div className="mx-auto w-full max-w-2xl">
+          <SkipRound
+            players={state.players}
+            totalRounds={result.rounds.length}
+            defaultRound={state.currentIndex + 2}
+            onCancel={() => setSkipOpen(false)}
+            onApply={(change) => {
+              dispatch({ type: "SKIP_ROUND", ...change })
+              setSkipOpen(false)
+            }}
+          />
+        </div>
       )}
 
       {addRoundsOpen && (
-        <AddRounds
-          totalRounds={result.rounds.length}
-          onCancel={() => setAddRoundsOpen(false)}
-          onApply={(change) => {
-            dispatch({ type: "ADD_ROUNDS", ...change })
-            setAddRoundsOpen(false)
-          }}
-        />
+        <div className="mx-auto w-full max-w-2xl">
+          <AddRounds
+            totalRounds={result.rounds.length}
+            onCancel={() => setAddRoundsOpen(false)}
+            onApply={(change) => {
+              dispatch({ type: "ADD_ROUNDS", ...change })
+              setAddRoundsOpen(false)
+            }}
+          />
+        </div>
       )}
 
       {rosterOpen && (
-        <RosterChange
-          players={state.players}
-          totalRounds={result.rounds.length}
-          defaultFirstRound={state.currentIndex + 2}
-          currentCourts={result.effectiveCourts}
-          onCancel={() => setRosterOpen(false)}
-          onApply={(change) => {
-            dispatch({ type: "APPLY_ROSTER_CHANGE", ...change })
-            setRosterOpen(false)
-          }}
-        />
+        <div className="mx-auto w-full max-w-2xl">
+          <RosterChange
+            players={state.players}
+            totalRounds={result.rounds.length}
+            defaultFirstRound={state.currentIndex + 2}
+            currentCourts={result.effectiveCourts}
+            onCancel={() => setRosterOpen(false)}
+            onApply={(change) => {
+              dispatch({ type: "APPLY_ROSTER_CHANGE", ...change })
+              setRosterOpen(false)
+            }}
+          />
+        </div>
       )}
 
-      {/* Summary chips */}
-      <div className="grid grid-cols-3 gap-2">
-        <Stat label="Players" value={state.players.length} />
-        <Stat label="Courts" value={result.effectiveCourts} />
-        <Stat label="Rounds" value={result.rounds.length} />
-      </div>
-      <p className="-mt-2 text-center text-xs text-muted-foreground">
-        {`Everyone sits ${minRest === maxRest ? minRest : `${minRest}–${maxRest}`} ${maxRest === 1 && minRest === 1 ? "time" : "times"}`}
-        {changeQualifier}
-        {" · "}
-        {result.repeatPartnerships > 0
-          ? `${result.repeatPartnerships} repeated partnership${result.repeatPartnerships === 1 ? "" : "s"}`
-          : "no repeated partnerships"}
-        {result.hasPartialCourt && " · 3-player court in use"}
-      </p>
+      {/* Summary and view toggle stay a compact centred column even when the
+          schedule below spreads across a wide screen. */}
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-5">
+        {/* Summary chips */}
+        <div className="grid grid-cols-3 gap-2">
+          <Stat label="Players" value={state.players.length} />
+          <Stat label="Courts" value={result.effectiveCourts} />
+          <Stat label="Rounds" value={result.rounds.length} />
+        </div>
+        <p className="-mt-2 text-center text-xs text-muted-foreground">
+          {`Everyone sits ${minRest === maxRest ? minRest : `${minRest}–${maxRest}`} ${maxRest === 1 && minRest === 1 ? "time" : "times"}`}
+          {changeQualifier}
+          {" · "}
+          {result.repeatPartnerships > 0
+            ? `${result.repeatPartnerships} repeated partnership${result.repeatPartnerships === 1 ? "" : "s"}`
+            : "no repeated partnerships"}
+          {result.hasPartialCourt && " · 3-player court in use"}
+        </p>
 
-      {/* View toggle */}
-      <div className="grid grid-cols-2 gap-1 rounded-xl border bg-muted/50 p-1">
-        <ToggleButton
-          active={state.view === "table"}
-          onClick={() => dispatch({ type: "SET_VIEW", view: "table" })}
-        >
-          <Table2 className="size-4" aria-hidden="true" />
-          Schedule
-        </ToggleButton>
-        <ToggleButton
-          active={state.view === "courtside"}
-          onClick={() => dispatch({ type: "SET_VIEW", view: "courtside" })}
-        >
-          <Maximize2 className="size-4" aria-hidden="true" />
-          Courtside
-        </ToggleButton>
+        {/* View toggle */}
+        <div className="grid grid-cols-2 gap-1 rounded-xl border bg-muted/50 p-1">
+          <ToggleButton
+            active={state.view === "table"}
+            onClick={() => dispatch({ type: "SET_VIEW", view: "table" })}
+          >
+            <Table2 className="size-4" aria-hidden="true" />
+            Schedule
+          </ToggleButton>
+          <ToggleButton
+            active={state.view === "courtside"}
+            onClick={() => dispatch({ type: "SET_VIEW", view: "courtside" })}
+          >
+            <Maximize2 className="size-4" aria-hidden="true" />
+            Courtside
+          </ToggleButton>
+        </div>
       </div>
 
       {state.view === "table" ? (

@@ -12,9 +12,18 @@ export function ScheduleTable({ result }: ScheduleTableProps) {
   // the columns to the busiest round (falling back to effectiveCourts).
   const courtCount = rounds.reduce((max, r) => Math.max(max, r.matches.length), effectiveCourts)
   const courtNumbers = Array.from({ length: courtCount }, (_, i) => i + 1)
+  // Take only as much width as the schedule needs — roughly a comfortable
+  // column per court plus the round and sit-out columns — so a small draw stays
+  // compact on a wide screen while a big one spreads out instead of scrolling.
+  // The floor keeps it aligned with the controls above for one- and two-court
+  // draws.
+  const maxWidth = Math.max(672, 72 + courtCount * 200 + 168)
 
   return (
-    <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+    <div
+      className="mx-auto w-full overflow-hidden rounded-2xl border bg-card shadow-sm"
+      style={{ maxWidth }}
+    >
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -22,10 +31,13 @@ export function ScheduleTable({ result }: ScheduleTableProps) {
               <th className="sticky left-0 z-10 bg-muted/60 px-3 py-3 text-left font-display font-semibold">
                 Round
               </th>
+              {/* Court columns need a generous floor on a phone, where the table
+                  scrolls anyway; a tighter one from tablet up lets another court
+                  or two fit before scrolling starts. */}
               {courtNumbers.map((c) => (
                 <th
                   key={c}
-                  className="min-w-[168px] px-3 py-3 text-left font-display font-semibold"
+                  className="min-w-[168px] px-3 py-3 text-left font-display font-semibold md:min-w-[150px]"
                 >
                   Court {c}
                 </th>
